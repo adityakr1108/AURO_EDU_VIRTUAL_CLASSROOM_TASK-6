@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Video Chat Room</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #1e1e1e;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #fff;
+      overflow: hidden;
+      flex-direction: column;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 2rem;
+      color: #fff;
+    }
+
+    #video-container {
+      position: relative;
+      width: 100%;
+      height: 90%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 10px;
+      background-color: #000;
+      z-index: 1;
+    }
+
+    #localVideo.small {
+      width: 200px;
+      height: 150px;
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 2;
+      border: 2px solid #fff;
+    }
+
+    #remoteVideo.small {
+      width: 200px;
+      height: 150px;
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 2;
+      border: 2px solid #fff;
+    }
+
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      display: flex;
+      justify-content: center;
+      width: 100%;
+      gap: 20px;
+      z-index: 3;
+    }
+
+    .control-btn {
+      background-color: rgba(255, 255, 255, 0.7);
+      border: none;
+      padding: 15px;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background-color 0.3s, transform 0.2s;
+    }
+
+    .control-btn:hover {
+      background-color: rgba(255, 255, 255, 1);
+      transform: scale(1.1);
+    }
+
+    .control-btn:active {
+      transform: scale(0.95);
+    }
+
+    #chatToggle {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      z-index: 4;
+    }
+
+    #chat-container {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80%;
+      max-width: 500px;
+      height: 200px;
+      background-color: rgba(255, 255, 255, 0.9);
+      border-radius: 10px;
+      overflow-y: auto;
+      padding: 10px;
+      color: #000;
+      z-index: 3;
+      display: none;
+    }
+
+    #chat-box {
+      margin-bottom: 10px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    #chat-input {
+      display: flex;
+      gap: 10px;
+    }
+
+    #chat-input input {
+      width: 80%;
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+    }
+
+    #chat-input button {
+      width: 20%;
+      padding: 10px;
+      background-color: #4CAF50;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+    }
+
+    #chat-input button:hover {
+      background-color: #45a049;
+    }
+
+    .message {
+      padding: 5px;
+      margin: 3px 0;
+      border-radius: 5px;
+    }
+
+    .message.you {
+      background-color: #f1f1f1;
+      align-self: flex-end;
+    }
+
+    .message.other {
+      background-color: #e1e1e1;
+      align-self: flex-start;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Room: {{ room_name }}</h1>
+
+  <!-- Video Container -->
+  <div id="video-container">
+    <video id="localVideo" autoplay muted playsinline class="small"></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+  </div>
+
+  <!-- Control Buttons -->
+  <div class="controls">
+    <button class="control-btn" id="muteBtn"><i class="fa fa-microphone"></i></button>
+    <button class="control-btn" id="cameraBtn"><i class="fa fa-video-camera"></i></button>
+    <button class="control-btn" id="swapBtn"><i class="fa fa-arrows-alt-h"></i></button>
+    <button class="control-btn" id="disconnectBtn"><i class="fa fa-phone-slash"></i></button>
+  </div>
+
+  <!-- Chat Toggle Button -->
+  <button id="chatToggle" class="control-btn">
+    <i class="fa fa-comment"></i>
+  </button>
+
+  <!-- Chat Section -->
+  <div id="chat-container">
+    <div id="chat-box"></div>
+    <div id="chat-input">
+      <input type="text" id="messageInput" placeholder="Type a message..." />
+      <button id="sendMessageBtn">Send</button>
+    </div>
+  </div>
+
+  <!-- Script -->
+  <script>
+    const roomName = "{{ room_name }}";
+    const ws = new WebSocket(`ws://${window.location.host}/ws/video_chat/${roomName}/`);
+
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    const messageInput = document.getElementById("messageInput");
+    const sendMessageBtn = document.getElementById("sendMessageBtn");
+    const chatBox = document.getElementById("chat-box");
+    const muteBtn = document.getElementById("muteBtn");
+    const cameraBtn = document.getElementById("cameraBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+    const chatToggleBtn = document.getElementById("chatToggle");
+    const chatContainer = document.getElementById("chat-container");
+    const swapBtn = document.getElementById("swapBtn");
+
+    let isMuted = false;
+    let isCameraOff = false;
+    let isSwapped = false;
+
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+      stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+      localVideo.srcObject = stream;
+    });
+
+    peerConnection.ontrack = event => {
+      remoteVideo.srcObject = event.streams[0];
+    };
+
+    peerConnection.onicecandidate = event => {
+      if (event.candidate) {
+        ws.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+      }
+    };
+
+    ws.onmessage = async (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === 'offer') {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+      } else if (data.type === 'answer') {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+      } else if (data.type === 'candidate') {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      } else if (data.type === 'chat') {
+        appendMessage(data.message, 'other');
+      }
+    };
+
+    ws.onopen = async () => {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+    };
+
+    sendMessageBtn.onclick = () => {
+      const message = messageInput.value;
+      if (message) {
+        ws.send(JSON.stringify({ type: 'chat', message }));
+        messageInput.value = '';
+        appendMessage('You: ' + message, 'you');
+      }
+    };
+
+    function appendMessage(message, sender) {
+      const messageElement = document.createElement('div');
+      messageElement.classList.add('message', sender);
+      messageElement.textContent = message;
+      chatBox.appendChild(messageElement);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    muteBtn.onclick = () => {
+      isMuted = !isMuted;
+      localVideo.srcObject.getAudioTracks().forEach(track => track.enabled = !isMuted);
+      muteBtn.querySelector('i').classList.toggle('fa-microphone-slash', isMuted);
+    };
+
+    cameraBtn.onclick = () => {
+      isCameraOff = !isCameraOff;
+      localVideo.srcObject.getVideoTracks().forEach(track => track.enabled = !isCameraOff);
+      cameraBtn.querySelector('i').classList.toggle('fa-video-slash', isCameraOff);
+    };
+
+    disconnectBtn.onclick = () => {
+      peerConnection.close();
+      ws.send(JSON.stringify({ type: 'disconnect' }));
+      window.location.href = '/';
+    };
+
+    chatToggleBtn.onclick = () => {
+      chatContainer.style.display = chatContainer.style.display === "none" ? "block" : "none";
+    };
+
+    swapBtn.onclick = () => {
+      isSwapped = !isSwapped;
+      if (isSwapped) {
+        localVideo.classList.remove('small');
+        remoteVideo.classList.add('small');
+      } else {
+        remoteVideo.classList.remove('small');
+        localVideo.classList.add('small');
+      }
+    };
+  </script>
+</body>
+</html>
